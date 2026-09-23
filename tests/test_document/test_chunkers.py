@@ -3,7 +3,20 @@
 import pytest
 
 from ragframework.base import Document
-from ragframework.document.chunkers import FixedSizeChunker, SentenceChunker
+from ragframework.document.chunkers import (
+    FixedSizeChunker,
+    RecursiveChunker,
+    SentenceChunker,
+)
+
+def test_recursive_chunker_from_config():
+    from ragframework.config import RAGConfig
+
+    config = RAGConfig(chunk_size=100, chunk_overlap=20)
+    chunker = RecursiveChunker.from_config(config)
+
+    assert chunker.chunk_size == 100
+    assert chunker.chunk_overlap == 20
 
 
 @pytest.fixture()
@@ -49,6 +62,21 @@ class TestFixedSizeChunker:
         chunker = FixedSizeChunker()
         chunks = chunker.chunk(doc)
         assert chunks == []
+
+    @pytest.mark.parametrize(
+        ("chunk_size", "chunk_overlap"),
+        [
+            (0, 0),
+            (-1, 0),
+            (10, -1),
+        ],
+    )
+    def test_invalid_parameters_raise(self, chunk_size, chunk_overlap):
+        with pytest.raises(ValueError):
+            FixedSizeChunker(
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+            )
 
 
 class TestSentenceChunker:
@@ -128,6 +156,20 @@ class TestSentenceChunker:
             "Ccc. Ddd.",
         ]
 
+    @pytest.mark.parametrize(
+        ("max_sentences", "overlap_sentences"),
+        [
+            (0, 0),
+            (-1, 0),
+            (5, -1),
+        ],
+    )
+    def test_invalid_parameters_raise(self, max_sentences, overlap_sentences):
+        with pytest.raises(ValueError):
+            SentenceChunker(
+                max_sentences=max_sentences,
+                overlap_sentences=overlap_sentences,
+            )
 
 class TestRecursiveChunker:
     def test_empty_doc(self):
