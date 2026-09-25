@@ -9,6 +9,7 @@ from ragframework.document.chunkers import (
     SentenceChunker,
 )
 
+
 def test_recursive_chunker_from_config():
     from ragframework.config import RAGConfig
 
@@ -171,6 +172,7 @@ class TestSentenceChunker:
                 overlap_sentences=overlap_sentences,
             )
 
+
 class TestRecursiveChunker:
     def test_empty_doc(self):
         from ragframework.document.chunkers import RecursiveChunker
@@ -250,13 +252,19 @@ class TestRecursiveChunker:
     def test_validation(self):
         from ragframework.document.chunkers import RecursiveChunker
 
-        with pytest.raises(ValueError):
-            RecursiveChunker(chunk_size=0)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"chunk_size must be positive"):
+            RecursiveChunker(chunk_size=0, chunk_overlap=0)
+
+        with pytest.raises(ValueError, match=r"chunk_size must be positive"):
+            RecursiveChunker(chunk_size=-1, chunk_overlap=-1)
+
+        with pytest.raises(ValueError, match=r"chunk_overlap must be non-negative"):
             RecursiveChunker(chunk_size=10, chunk_overlap=-1)
-        with pytest.raises(ValueError):
+
+        with pytest.raises(ValueError, match=r"chunk_overlap must be less than chunk_size"):
             RecursiveChunker(chunk_size=10, chunk_overlap=10)
-        with pytest.raises(ValueError):
+
+        with pytest.raises(ValueError, match=r"chunk_overlap must be less than chunk_size"):
             RecursiveChunker(chunk_size=10, chunk_overlap=15)
 
     def test_edge_cases(self):
