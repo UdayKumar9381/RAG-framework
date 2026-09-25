@@ -56,6 +56,23 @@ class TestTextFileLoader:
         ):
             loader.load(str(path))
 
+    @pytest.mark.parametrize(
+        ("errors", "expected"),
+        [
+            ("replace", "\ufffd"),
+            ("ignore", ""),
+        ],
+    )
+    def test_error_handling(self, tmp_path, errors, expected):
+        path = tmp_path / "invalid.txt"
+        path.write_bytes(b"Hello \xff world")
+
+        loader = TextFileLoader(encoding="utf-8", errors=errors)
+        docs = loader.load(str(path))
+
+        assert len(docs) == 1
+        assert expected in docs[0].content
+
 
 class TestMarkdownLoader:
     def test_loads_markdown(self, tmp_path):
@@ -96,6 +113,23 @@ class TestMarkdownLoader:
         ):
             loader.load(str(path))
 
+    @pytest.mark.parametrize(
+        ("errors", "expected"),
+        [
+            ("replace", "\ufffd"),
+            ("ignore", ""),
+        ],
+    )
+    def test_error_handling(self, tmp_path, errors, expected):
+        path = tmp_path / "invalid.md"
+        path.write_bytes(b"# Hello \xff world")
+
+        loader = MarkdownLoader(encoding="utf-8", errors=errors)
+        docs = loader.load(str(path))
+
+        assert len(docs) == 1
+        assert expected in docs[0].content
+
 
 def test_pdf_loader_requires_pypdf(tmp_path, monkeypatch):
     pdf_path = tmp_path / "doc.pdf"
@@ -113,6 +147,7 @@ def test_pdf_loader_requires_pypdf(tmp_path, monkeypatch):
     loader = PDFLoader()
     with pytest.raises(ImportError, match=r"PDF support requires 'ragframework\[pdf\]'"):
         loader.load(str(pdf_path))
+
 
 def test_pdf_loader_loads_pages_with_fake_pypdf(tmp_path, monkeypatch):
     class FakePage:

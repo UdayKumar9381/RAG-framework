@@ -28,15 +28,12 @@ def _read_text_file(path: Path, encoding: str, errors: str = "strict") -> str:
     try:
         return path.read_text(encoding=encoding, errors=errors)
     except UnicodeDecodeError as exc:
-        raise LoaderError(
-            f"Could not decode {path} using encoding {encoding!r}: {exc}"
-        ) from exc
+        raise LoaderError(f"Could not decode {path} using encoding {encoding!r}: {exc}") from exc
     except LookupError as exc:
-        raise LoaderError(
-            f"Unknown encoding {encoding!r} for {path}: {exc}"
-        ) from exc
+        raise LoaderError(f"Unknown encoding {encoding!r} for {path}: {exc}") from exc
     except OSError as exc:
         raise LoaderError(f"Could not read {path}: {exc}") from exc
+
 
 class TextFileLoader(DocumentLoader):
     """Load a plain-text (``.txt``) file as a single :class:`Document`."""
@@ -57,10 +54,11 @@ class TextFileLoader(DocumentLoader):
             )
         ]
 
+
 class MarkdownLoader(DocumentLoader):
     """Load a Markdown (``.md``) file as a single :class:`Document`.
 
-    The raw Markdown text is stored as-is â€” no rendering is applied.
+    The raw Markdown text is stored as-is — no rendering is applied.
     This loader is intentionally minimal; a richer implementation that
     strips front-matter or renders HTML would make a great contribution.
     """
@@ -80,6 +78,7 @@ class MarkdownLoader(DocumentLoader):
                 metadata={"source": source, "filename": path.name, "format": "markdown"},
             )
         ]
+
 
 class PDFLoader(DocumentLoader):
     """Load a PDF file into one or more :class:`Document` objects.
