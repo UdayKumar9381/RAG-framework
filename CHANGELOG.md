@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Optimize `InMemoryRetriever.add()` to normalize only newly added vectors and avoid rebuilding the full matrix on every call (closes #27).
+
 ## [0.3.0] - 2026-09-25
 
 ### Added
@@ -26,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `InMemoryRetriever.retrieve()` now returns an empty list for non-positive `top_k` values and raises `RetrieverError` for non-integer or boolean `top_k` values (closes #23).
 - Enforce LF line endings with `.gitattributes` across platforms while keeping PNG files binary (closes #48).
 - `InMemoryRetriever` now raises `RetrieverError` for invalid vectors and dimension mismatches, validates complete batches before updating stored data, and treats empty batches as a no-op. Vector validation and normalization are shared with `FAISSRetriever` (closes #26).
+### Fixed
+- Optimize `InMemoryRetriever.add()` to normalize only newly added vectors and avoid rebuilding the full matrix on every call (closes #27).
 
 ## [0.2.0] - 2026-09-19
 

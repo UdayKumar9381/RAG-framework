@@ -22,6 +22,7 @@ class InMemoryRetriever(Retriever):
     def __init__(self) -> None:
         self._chunks: list[Chunk] = []
         self._matrix: np.ndarray[Any, Any] | None = None  # shape (N, dim)
+        self._matrix_blocks: list[np.ndarray[Any, Any]] = []
         self._dimension: int | None = None
 
     def add(self, chunks: list[Chunk]) -> None:
@@ -52,10 +53,9 @@ class InMemoryRetriever(Retriever):
             vectors.append(vector)
 
         matrix = np.stack(vectors)
-        if self._matrix is not None:
-            matrix = np.concatenate((self._matrix, matrix))
+        self._matrix_blocks.append(matrix)
 
-        self._matrix = matrix
+        self._matrix = None
         self._dimension = expected_dimension
         self._chunks.extend(chunks)
 
@@ -69,13 +69,16 @@ class InMemoryRetriever(Retriever):
         """
         if not isinstance(top_k, int) or isinstance(top_k, bool):
             raise RetrieverError("top_k must be an integer.")
-        if top_k <= 0 or not self._chunks or self._matrix is None:
+        if top_k <= 0 or not self._chunks:
             return []
         q = validate_vector(query_embedding, "Query embedding")
         if q.shape[0] != self._dimension:
             raise RetrieverError(
                 f"Query embedding has dimension {q.shape[0]}; expected {self._dimension}."
             )
+        if self._matrix is None:
+            self._matrix = np.concatenate(self._matrix_blocks)
+
         scores: np.ndarray[Any, Any] = self._matrix @ q
         k = min(top_k, len(self._chunks))
         top_indices = np.argpartition(scores, -k)[-k:]

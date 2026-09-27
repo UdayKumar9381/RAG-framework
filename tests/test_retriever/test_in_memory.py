@@ -158,3 +158,26 @@ class TestInMemoryRetriever:
 
         with pytest.raises(RetrieverError, match="top_k must be an integer"):
             r.retrieve([1.0, 0.0], top_k=True)
+
+    def test_batched_add_matches_single_batch(self):
+        chunks = [
+            make_chunk("a", [1.0, 0.0]),
+            make_chunk("b", [0.0, 1.0]),
+            make_chunk("c", [1.0, 1.0]),
+            make_chunk("d", [-1.0, 0.0]),
+        ]
+
+        single_batch = InMemoryRetriever()
+        single_batch.add(chunks)
+
+        batched = InMemoryRetriever()
+        batched.add(chunks[:2])
+        batched.add(chunks[2:])
+
+        query = [1.0, 1.0]
+
+        single_results = single_batch.retrieve(query, top_k=4)
+        batched_results = batched.retrieve(query, top_k=4)
+
+        assert len(batched_results) == len(single_results)
+        assert batched_results[0].id == single_results[0].id
