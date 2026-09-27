@@ -1,9 +1,28 @@
 """Tests for built-in text chunkers."""
 
+import builtins
+import sys
+import types
+
 import pytest
 
 from ragframework.base import Document
-from ragframework.document.chunkers import FixedSizeChunker, SentenceChunker
+from ragframework.document.chunkers import (
+    FixedSizeChunker,
+    RecursiveChunker,
+    SentenceChunker,
+)
+from typing import Any
+
+
+def test_recursive_chunker_from_config():
+    from ragframework.config import RAGConfig
+
+    config = RAGConfig(chunk_size=100, chunk_overlap=20)
+    chunker = RecursiveChunker.from_config(config)
+
+    assert chunker.chunk_size == 100
+    assert chunker.chunk_overlap == 20
 
 
 @pytest.fixture()
@@ -49,6 +68,21 @@ class TestFixedSizeChunker:
         chunker = FixedSizeChunker()
         chunks = chunker.chunk(doc)
         assert chunks == []
+
+    @pytest.mark.parametrize(
+        ("chunk_size", "chunk_overlap"),
+        [
+            (0, 0),
+            (-1, 0),
+            (10, -1),
+        ],
+    )
+    def test_invalid_parameters_raise(self, chunk_size, chunk_overlap):
+        with pytest.raises(ValueError):
+            FixedSizeChunker(
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+            )
 
 
 class TestSentenceChunker:
@@ -127,6 +161,21 @@ class TestSentenceChunker:
             "Bbb. Ccc.",
             "Ccc. Ddd.",
         ]
+
+    @pytest.mark.parametrize(
+        ("max_sentences", "overlap_sentences"),
+        [
+            (0, 0),
+            (-1, 0),
+            (5, -1),
+        ],
+    )
+    def test_invalid_parameters_raise(self, max_sentences, overlap_sentences):
+        with pytest.raises(ValueError):
+            SentenceChunker(
+                max_sentences=max_sentences,
+                overlap_sentences=overlap_sentences,
+            )
 
 
 class TestRecursiveChunker:
@@ -208,13 +257,19 @@ class TestRecursiveChunker:
     def test_validation(self):
         from ragframework.document.chunkers import RecursiveChunker
 
-        with pytest.raises(ValueError):
-            RecursiveChunker(chunk_size=0)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"chunk_size must be positive"):
+            RecursiveChunker(chunk_size=0, chunk_overlap=0)
+
+        with pytest.raises(ValueError, match=r"chunk_size must be positive"):
+            RecursiveChunker(chunk_size=-1, chunk_overlap=-1)
+
+        with pytest.raises(ValueError, match=r"chunk_overlap must be non-negative"):
             RecursiveChunker(chunk_size=10, chunk_overlap=-1)
-        with pytest.raises(ValueError):
+
+        with pytest.raises(ValueError, match=r"chunk_overlap must be less than chunk_size"):
             RecursiveChunker(chunk_size=10, chunk_overlap=10)
-        with pytest.raises(ValueError):
+
+        with pytest.raises(ValueError, match=r"chunk_overlap must be less than chunk_size"):
             RecursiveChunker(chunk_size=10, chunk_overlap=15)
 
     def test_edge_cases(self):
@@ -243,3 +298,156 @@ class TestRecursiveChunker:
         )
         chunks = chunker.chunk(doc)
         assert [len(c.content) for c in chunks] == [6, 6, 6]
+
+
+# --------------- Fake tiktoken for CI ---------------
+
+
+class FakeEncoding:
+    """Emulates tiktoken with byte-level tokens, special token checks, and decode_bytes."""
+
+    def encode(
+        self,
+        text: str,
+        *,
+        allowed_special: Any = (),
+        disallowed_special: Any = "all",
+    ) -> list[int]:
+        if disallowed_special and "<|endoftext|>" in text:
+            raise ValueError(
+                "Encountered text corresponding to disallowed special token '<|endoftext|>'."
+            )
+        return list(text.encode("utf-8"))
+
+    def decode(self, tokens: list[int], errors: str = "replace") -> str:
+        return bytes(tokens).decode("utf-8", errors=errors)
+
+    def decode_bytes(self, tokens: list[int]) -> bytes:
+        return bytes(tokens)
+
+
+@pytest.fixture
+def fake_tiktoken(monkeypatch):
+    """Inject a fake tiktoken module so tests don't need a real download."""
+    module = types.ModuleType("tiktoken")
+    module.get_encoding = lambda name: FakeEncoding()
+    monkeypatch.setitem(sys.modules, "tiktoken", module)
+
+
+class TestTokenChunker:
+    def test_basic_chunking(self, fake_tiktoken):
+        from ragframework.document.chunkers import TokenChunker
+
+        doc = Document(id="d1", content="A" * 100, metadata={})
+        chunker = TokenChunker(chunk_tokens=30, overlap_tokens=5)
+        chunks = chunker.chunk(doc)
+
+        assert len(chunks) > 1
+        # No chunk should exceed the token limit
+        for c in chunks:
+            assert c.metadata["token_count"] <= 30
+
+    def test_chunk_ids_follow_convention(self, fake_tiktoken):
+        from ragframework.document.chunkers import TokenChunker
+
+        doc = Document(id="doc1", content="Hello world this is a test", metadata={"src": "test"})
+        chunker = TokenChunker(chunk_tokens=10, overlap_tokens=2)
+        chunks = chunker.chunk(doc)
+
+        for i, c in enumerate(chunks):
+            assert c.id == f"doc1:{i}"
+            assert c.metadata["chunk_index"] == i
+            assert c.metadata["src"] == "test"
+            assert "token_count" in c.metadata
+
+    def test_empty_doc_returns_empty(self, fake_tiktoken):
+        from ragframework.document.chunkers import TokenChunker
+
+        doc = Document(id="x", content="", metadata={})
+        chunker = TokenChunker(chunk_tokens=10, overlap_tokens=0)
+        assert chunker.chunk(doc) == []
+
+    def test_short_doc_single_chunk(self, fake_tiktoken):
+        from ragframework.document.chunkers import TokenChunker
+
+        doc = Document(id="x", content="Hi", metadata={})
+        chunker = TokenChunker(chunk_tokens=256, overlap_tokens=0)
+        chunks = chunker.chunk(doc)
+        assert len(chunks) == 1
+        assert chunks[0].content == "Hi"
+        assert chunks[0].metadata["token_count"] == 2  # 'H' and 'i' in our fake
+
+    def test_validation_errors(self, fake_tiktoken):
+        from ragframework.document.chunkers import TokenChunker
+
+        with pytest.raises(ValueError, match="chunk_tokens must be positive"):
+            TokenChunker(chunk_tokens=0)
+        with pytest.raises(ValueError, match="overlap_tokens must be non-negative"):
+            TokenChunker(chunk_tokens=10, overlap_tokens=-1)
+        with pytest.raises(ValueError, match="overlap_tokens must be less than chunk_tokens"):
+            TokenChunker(chunk_tokens=10, overlap_tokens=10)
+
+    def test_no_chunk_exceeds_token_limit(self, fake_tiktoken):
+        from ragframework.document.chunkers import TokenChunker
+
+        doc = Document(id="d1", content="abcdefghijklmnopqrstuvwxyz" * 10, metadata={})
+        chunker = TokenChunker(chunk_tokens=50, overlap_tokens=10)
+        chunks = chunker.chunk(doc)
+
+        for c in chunks:
+            assert c.metadata["token_count"] <= 50
+
+    def test_missing_tiktoken_gives_helpful_message(self, monkeypatch):
+        real_import = builtins.__import__
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "tiktoken":
+                raise ImportError("No module named 'tiktoken'")
+            return real_import(name, globals, locals, fromlist, level)
+
+        monkeypatch.delitem(sys.modules, "tiktoken", raising=False)
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        from ragframework.document.chunkers import TokenChunker
+
+        with pytest.raises(ImportError, match=r"ragframework\[tokens\]"):
+            TokenChunker()
+
+    def test_special_tokens_treated_as_ordinary_text(self, fake_tiktoken):
+        from ragframework.document.chunkers import TokenChunker
+
+        doc = Document(id="x", content="Hello <|endoftext|> world", metadata={})
+        chunker = TokenChunker(chunk_tokens=50, overlap_tokens=0)
+        chunks = chunker.chunk(doc)
+        assert len(chunks) == 1
+        assert chunks[0].content == "Hello <|endoftext|> world"
+
+    def test_emoji_preserves_complete_characters(self, fake_tiktoken):
+        from ragframework.document.chunkers import TokenChunker
+
+        doc = Document(id="x", content="A 🙂 B 🚀 C", metadata={})
+        chunker = TokenChunker(chunk_tokens=6, overlap_tokens=0)
+        chunks = chunker.chunk(doc)
+        assert len(chunks) > 1
+        for c in chunks:
+            assert "\ufffd" not in c.content
+        assert "".join(c.content for c in chunks) == "A 🙂 B 🚀 C"
+
+    def test_cjk_preserves_complete_characters(self, fake_tiktoken):
+        from ragframework.document.chunkers import TokenChunker
+
+        doc = Document(id="x", content="你好世界，这是一个测试", metadata={})
+        chunker = TokenChunker(chunk_tokens=9, overlap_tokens=0)
+        chunks = chunker.chunk(doc)
+        assert len(chunks) > 1
+        for c in chunks:
+            assert "\ufffd" not in c.content
+        assert "".join(c.content for c in chunks) == "你好世界，这是一个测试"
+
+    def test_character_cannot_fit_raises_value_error(self, fake_tiktoken):
+        from ragframework.document.chunkers import TokenChunker
+
+        doc = Document(id="x", content="🙂", metadata={})
+        chunker = TokenChunker(chunk_tokens=1, overlap_tokens=0)
+        with pytest.raises(ValueError, match="cannot fit within chunk_tokens"):
+            chunker.chunk(doc)
