@@ -25,7 +25,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev,faiss,chromadb]"
+        run: pip install -e ".[dev,faiss,chromadb,docx]"
 
       - name: Lint with ruff
         run: ruff check ragframework/
@@ -52,7 +52,7 @@ jobs:
           cache: pip
 
       - name: Install type-check dependencies
-        run: pip install -c .github/constraints-typecheck.txt -e ".[faiss]" "mypy>=1.10"
+        run: pip install -c .github/constraints-typecheck.txt -e ".[faiss,docx]" "mypy>=1.10"
 
       - name: Type check with mypy
         run: mypy ragframework/

@@ -359,3 +359,100 @@ class RecursiveChunker(TextChunker):
             final_chunks.append("".join(current_chunk_pieces))
 
         return final_chunks
+
+
+class TokenChunker(TextChunker):
+    """Split text into chunks measured in tokens using tiktoken.
+    Args:
+        chunk_tokens: Maximum number of tokens per chunk.
+        overlap_tokens: Number of overlapping tokens between adjacent chunks.
+        encoding_name: Name of the tiktoken encoding to use.
+    Raises:
+        ImportError: If the ``tokens`` optional dependency is not installed.
+    """
+
+    def __init__(
+        self,
+        chunk_tokens: int = 256,
+        overlap_tokens: int = 32,
+        encoding_name: str = "cl100k_base",
+    ) -> None:
+        # --- Guarded import (same pattern as HuggingFaceEmbedder) ---
+        try:
+            import tiktoken
+        except ImportError as exc:
+            raise ImportError(
+                "Token chunking requires 'ragframework[tokens]'. "
+                "Install it with: pip install ragframework[tokens]"
+            ) from exc
+        # --- Validation (same rules as RecursiveChunker) ---
+        if chunk_tokens <= 0:
+            raise ValueError("chunk_tokens must be positive")
+        if overlap_tokens < 0:
+            raise ValueError("overlap_tokens must be non-negative")
+
+        if overlap_tokens >= chunk_tokens:
+            raise ValueError("overlap_tokens must be less than chunk_tokens")
+
+        self.chunk_tokens = chunk_tokens
+        self.overlap_tokens = overlap_tokens
+        self.encoding_name = encoding_name
+        self._encoding = tiktoken.get_encoding(encoding_name)
+
+    def chunk(self, document: Document) -> list[Chunk]:
+        if not document.content:
+            return []
+        # Treat special tokens like <|endoftext|> as ordinary text
+        all_tokens = self._encoding.encode(document.content, disallowed_special=())
+        if not all_tokens:
+            return []
+        chunks: list[Chunk] = []
+        start_idx = 0
+        chunk_num = 0
+        total_tokens = len(all_tokens)
+        while start_idx < total_tokens:
+            end_idx = min(start_idx + self.chunk_tokens, total_tokens)
+            # Shrink window backwards if it cuts across a multi-byte UTF-8 character
+            chunk_text: str | None = None
+            while end_idx > start_idx:
+                raw_bytes = self._encoding.decode_bytes(all_tokens[start_idx:end_idx])
+                try:
+                    chunk_text = raw_bytes.decode("utf-8")
+                    break
+                except UnicodeDecodeError:
+                    end_idx -= 1
+            # If even 1 token cannot complete a character, it exceeds chunk_tokens
+            if end_idx == start_idx or chunk_text is None:
+                raise ValueError(
+                    f"Character at token index {start_idx} cannot fit within "
+                    f"chunk_tokens={self.chunk_tokens}. Increase chunk_tokens."
+                )
+            token_count = end_idx - start_idx
+            chunks.append(
+                Chunk(
+                    id=f"{document.id}:{chunk_num}",
+                    content=chunk_text,
+                    metadata={
+                        **document.metadata,
+                        "chunk_index": chunk_num,
+                        "token_count": token_count,
+                    },
+                )
+            )
+            chunk_num += 1
+            if end_idx >= total_tokens:
+                break
+            # Calculate next start_idx respecting overlap and character boundaries
+            if self.overlap_tokens == 0:
+                start_idx = end_idx
+            else:
+                target_start = max(start_idx + 1, end_idx - self.overlap_tokens)
+                while target_start < end_idx:
+                    overlap_bytes = self._encoding.decode_bytes(all_tokens[target_start:end_idx])
+                    try:
+                        overlap_bytes.decode("utf-8")
+                        break
+                    except UnicodeDecodeError:
+                        target_start += 1
+                start_idx = target_start
+        return chunks
