@@ -1,7 +1,7 @@
 """Built-in document loaders.
 
-These loaders handle plain text and Markdown files, PDF with no extra dependencies.
-For DOCX, HTML, and other formats see the open issues in
+These loaders handle plain text, Markdown, PDF, and DOCX files.
+For HTML and other formats see the open issues in
 `.github/GOOD_FIRST_ISSUES.md`.
 """
 
@@ -18,22 +18,34 @@ def _make_id(source: str) -> str:
     return hashlib.md5(source.encode()).hexdigest()[:12]
 
 
+def _read_text_file(path: Path, encoding: str, errors: str = "strict") -> str:
+    """Read a text file and normalize filesystem/encoding errors."""
+    if not path.exists():
+        raise LoaderError(f"File not found: {path}")
+    if not path.is_file():
+        raise LoaderError(f"Not a file: {path}")
+
+    try:
+        return path.read_text(encoding=encoding, errors=errors)
+    except UnicodeDecodeError as exc:
+        raise LoaderError(f"Could not decode {path} using encoding {encoding!r}: {exc}") from exc
+    except LookupError as exc:
+        raise LoaderError(f"Unknown encoding {encoding!r} for {path}: {exc}") from exc
+    except OSError as exc:
+        raise LoaderError(f"Could not read {path}: {exc}") from exc
+
+
 class TextFileLoader(DocumentLoader):
     """Load a plain-text (``.txt``) file as a single :class:`Document`."""
 
-    def __init__(self, encoding: str = "utf-8") -> None:
+    def __init__(self, encoding: str = "utf-8", errors: str = "strict") -> None:
         self.encoding = encoding
+        self.errors = errors
 
     def load(self, source: str) -> list[Document]:
         path = Path(source)
-        if not path.exists():
-            raise LoaderError(f"File not found: {source}")
-        if not path.is_file():
-            raise LoaderError(f"Not a file: {source}")
-        try:
-            content = path.read_text(encoding=self.encoding)
-        except OSError as exc:
-            raise LoaderError(f"Could not read {source}: {exc}") from exc
+        content = _read_text_file(path, self.encoding, self.errors)
+
         return [
             Document(
                 id=_make_id(source),
@@ -51,24 +63,76 @@ class MarkdownLoader(DocumentLoader):
     strips front-matter or renders HTML would make a great contribution.
     """
 
-    def __init__(self, encoding: str = "utf-8") -> None:
+    def __init__(self, encoding: str = "utf-8", errors: str = "strict") -> None:
         self.encoding = encoding
+        self.errors = errors
 
     def load(self, source: str) -> list[Document]:
         path = Path(source)
-        if not path.exists():
-            raise LoaderError(f"File not found: {source}")
-        if not path.is_file():
-            raise LoaderError(f"Not a file: {source}")
-        try:
-            content = path.read_text(encoding=self.encoding)
-        except OSError as exc:
-            raise LoaderError(f"Could not read {source}: {exc}") from exc
+        content = _read_text_file(path, self.encoding, self.errors)
+
         return [
             Document(
                 id=_make_id(source),
                 content=content,
                 metadata={"source": source, "filename": path.name, "format": "markdown"},
+            )
+        ]
+
+
+class DocxLoader(DocumentLoader):
+    """Load a DOCX file into one or more :class:`Document` objects."""
+
+    def __init__(self, split_paragraphs: bool = True) -> None:
+        self.split_paragraphs = split_paragraphs
+
+    def load(self, source: str) -> list[Document]:
+        path = Path(source)
+
+        if not path.exists():
+            raise LoaderError(f"File not found: {source}")
+
+        if not path.is_file():
+            raise LoaderError(f"Not a file: {source}")
+
+        try:
+            from docx import Document as DocxDocument
+        except ImportError as exc:
+            raise LoaderError(
+                "DOCX support requires 'ragframework[docx]'. "
+                "Install it with: pip install ragframework[docx]"
+            ) from exc
+
+        try:
+            docx = DocxDocument(str(path))
+        except Exception as exc:
+            raise LoaderError(f"Could not read DOCX file {source}: {exc}") from exc
+        paragraphs = [paragraph.text for paragraph in docx.paragraphs if paragraph.text.strip()]
+        if self.split_paragraphs:
+            return [
+                Document(
+                    id=_make_id(f"{source}_paragraph{i}"),
+                    content=paragraph,
+                    metadata={
+                        "source": source,
+                        "filename": path.name,
+                        "format": "docx",
+                        "paragraph_number": i,
+                    },
+                )
+                for i, paragraph in enumerate(paragraphs, start=1)
+            ]
+
+        return [
+            Document(
+                id=_make_id(source),
+                content="\n\n".join(paragraphs),
+                metadata={
+                    "source": source,
+                    "filename": path.name,
+                    "format": "docx",
+                    "split_paragraphs": False,
+                },
             )
         ]
 
