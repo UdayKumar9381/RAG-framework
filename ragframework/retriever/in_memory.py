@@ -77,7 +77,14 @@ class InMemoryRetriever(Retriever):
                 f"Query embedding has dimension {q.shape[0]}; expected {self._dimension}."
             )
         if self._matrix is None:
-            self._matrix = np.concatenate(self._matrix_blocks)
+            if len(self._matrix_blocks) == 1:
+                # Reuse the existing array; do not create another copy.
+                self._matrix = self._matrix_blocks[0]
+            else:
+                # Consolidate all blocks into one cached matrix and replace the
+                # old block references so the original arrays can be released.
+                self._matrix = np.concatenate(self._matrix_blocks)
+                self._matrix_blocks = [self._matrix]
 
         scores: np.ndarray[Any, Any] = self._matrix @ q
         k = min(top_k, len(self._chunks))
