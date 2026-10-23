@@ -61,6 +61,7 @@ def test_batches_upsert_without_duplicate_ids() -> None:
     assert {chunk.id for chunk in results} == {"first", "second"}
     assert retriever._chunks[0] is replacement
 
+
 def test_add_batch_replaces_existing_and_adds_new_chunks() -> None:
     retriever = FAISSRetriever(ef_search=64)
 
@@ -80,6 +81,7 @@ def test_add_batch_replaces_existing_and_adds_new_chunks() -> None:
     assert retriever._chunks[1] is second
     assert retriever._chunks[2] is third
 
+
 def test_add_same_id_replaces_existing_chunk() -> None:
     retriever = FAISSRetriever(ef_search=64)
 
@@ -93,7 +95,6 @@ def test_add_same_id_replaces_existing_chunk() -> None:
     assert retriever.retrieve([0.0, 1.0], top_k=1) == [new]
     assert retriever.retrieve([0.0, 1.0], top_k=1)[0].content == new.content
     assert retriever.retrieve([0.0, 1.0], top_k=1)[0].embedding == new.embedding
-
 
 
 def test_failed_upsert_preserves_existing_index(
@@ -119,6 +120,7 @@ def test_failed_upsert_preserves_existing_index(
 
     results = retriever.retrieve([1.0, 0.0], top_k=1)
     assert results == [existing]
+
 
 def test_add_logs_count_and_dimension(caplog) -> None:
     retriever = FAISSRetriever()
@@ -310,3 +312,106 @@ else:
 """
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_duplicate_ids_in_initial_batch_last_occurrence_wins() -> None:
+    retriever = FAISSRetriever(ef_search=64)
+    old = make_chunk("same", [1.0, 0.0])
+    latest = make_chunk("same", [0.0, 1.0])
+    other = make_chunk("other", [1.0, 0.0])
+
+    retriever.add([old, other, latest])
+
+    assert len(retriever) == 2
+    assert [chunk.id for chunk in retriever._chunks] == ["same", "other"]
+    assert retriever._chunks[0] is latest
+    assert retriever.retrieve([0.0, 1.0], top_k=1) == [latest]
+
+
+def test_repeated_replacement_returns_latest_content_and_embedding() -> None:
+    retriever = FAISSRetriever(ef_search=64)
+    old = make_chunk("same", [1.0, 0.0])
+    middle = Chunk(
+        id="same",
+        content="Middle version",
+        metadata={},
+        embedding=[0.0, 1.0],
+    )
+    latest = Chunk(
+        id="same",
+        content="Latest version",
+        metadata={},
+        embedding=[-1.0, 0.0],
+    )
+
+    retriever.add([old])
+    retriever.add([middle])
+    retriever.add([latest])
+
+    results = retriever.retrieve([-1.0, 0.0], top_k=1)
+
+    assert len(retriever) == 1
+    assert results == [latest]
+    assert results[0].content == "Latest version"
+    assert results[0].embedding == [-1.0, 0.0]
+
+
+def test_search_starts_with_bounded_candidate_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    retriever = FAISSRetriever()
+    retriever.add([make_chunk(f"chunk-{i}", [1.0, float(i + 1)]) for i in range(30)])
+
+    original_search = retriever._index.search
+    requested_counts: list[int] = []
+
+    def track_search(query: np.ndarray, count: int):
+        requested_counts.append(count)
+        return original_search(query, count)
+
+    monkeypatch.setattr(retriever._index, "search", track_search)
+
+    retriever.retrieve([1.0, 0.1], top_k=1)
+
+    assert requested_counts
+    assert requested_counts[0] < retriever._index.ntotal
+
+
+def test_search_expands_when_initial_candidates_are_stale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    retriever = FAISSRetriever()
+    old = make_chunk("same", [1.0, 0.0])
+    latest = make_chunk("same", [0.0, 1.0])
+
+    retriever.add([old])
+    retriever.add([latest])
+    retriever.add([make_chunk(f"other-{i}", [1.0, float(i + 1)]) for i in range(10)])
+
+    original_search = retriever._index.search
+    total = int(retriever._index.ntotal)
+    requested_counts: list[int] = []
+
+    def simulate_stale_first_search(query: np.ndarray, count: int):
+        requested_counts.append(count)
+
+        if count < total:
+            labels = np.full((1, count), -1, dtype=np.int64)
+            labels[0, 0] = 0  # Obsolete physical label for "same".
+            scores = np.zeros((1, count), dtype=np.float32)
+            return scores, labels
+
+        return original_search(query, count)
+
+    monkeypatch.setattr(
+        retriever._index,
+        "search",
+        simulate_stale_first_search,
+    )
+
+    results = retriever.retrieve([0.0, 1.0], top_k=1)
+
+    assert len(requested_counts) >= 2
+    assert requested_counts[0] < total
+    assert requested_counts[-1] == total
+    assert results == [latest]

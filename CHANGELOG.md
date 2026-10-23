@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `TextFileLoader` and `MarkdownLoader` now convert Unicode decoding and unknown encoding errors to `LoaderError`, with configurable text decoding error handling (closes #24).
 - Validate chunker size and overlap parameters in `FixedSizeChunker` and `SentenceChunker` (closes #25).
+- Ensure retrievers consistently apply last-occurrence-wins semantics for duplicate chunk IDs and return the latest content after upserts.
 
 ## [0.3.0] - 2026-09-25
 

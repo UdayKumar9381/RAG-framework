@@ -54,11 +54,14 @@ class ChromaRetriever(Retriever):
             raise RetrieverError(f"Could not initialize ChromaDB: {exc}") from exc
 
     def add(self, chunks: list[Chunk]) -> None:
-        """Add embedded chunks to the ChromaDB collection."""
+        """Upsert chunks; the last occurrence of each ID wins."""
         if not chunks:
             return
 
-        embeddings: list[Sequence[float]] = []
+        # Validate all chunks and deduplicate IDs.
+        # Reassigning an existing key keeps its original position,
+        # while the latest chunk becomes its value.
+        unique_chunks: dict[str, Chunk] = {}
 
         for chunk in chunks:
             if chunk.embedding is None:
@@ -66,23 +69,27 @@ class ChromaRetriever(Retriever):
                     f"Chunk '{chunk.id}' has no embedding. "
                     "Embed chunks before adding them to the retriever."
                 )
+            unique_chunks[chunk.id] = chunk
 
-            embeddings.append(chunk.embedding)
+        final_chunks = list(unique_chunks.values())
+        final_embeddings: list[Sequence[float]] = [
+            chunk.embedding for chunk in final_chunks if chunk.embedding is not None
+        ]
 
         try:
             self._collection.upsert(
-                ids=[chunk.id for chunk in chunks],
-                embeddings=embeddings,
-                documents=[chunk.content for chunk in chunks],
-                metadatas=[self._metadata(chunk) for chunk in chunks],
+                ids=[chunk.id for chunk in final_chunks],
+                embeddings=final_embeddings,
+                documents=[chunk.content for chunk in final_chunks],
+                metadatas=[self._metadata(chunk) for chunk in final_chunks],
             )
         except Exception as exc:
             raise RetrieverError(f"Failed to add chunks to ChromaDB: {exc}") from exc
 
         logger.debug(
             "Added chunks count=%d dimension=%d",
-            len(chunks),
-            len(embeddings[0]),
+            len(final_chunks),
+            len(final_embeddings[0]),
         )
 
     def retrieve(

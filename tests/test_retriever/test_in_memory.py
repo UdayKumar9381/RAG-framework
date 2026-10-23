@@ -202,3 +202,43 @@ class TestInMemoryRetriever:
         assert r._chunks[0] is replacement
         assert r._chunks[1] is second
         assert r._chunks[2] is third
+
+    def test_duplicate_ids_in_initial_batch_last_occurrence_wins(self):
+        retriever = InMemoryRetriever()
+        old = make_chunk("same", [1.0, 0.0])
+        other = make_chunk("other", [1.0, 0.0])
+        latest = make_chunk("same", [0.0, 1.0])
+
+        retriever.add([old, other, latest])
+
+        assert len(retriever) == 2
+        assert [chunk.id for chunk in retriever._chunks] == ["same", "other"]
+        assert retriever._chunks[0] is latest
+        assert retriever.retrieve([0.0, 1.0], top_k=1) == [latest]
+
+    def test_upsert_after_matrix_consolidation_uses_latest_vector(self):
+        retriever = InMemoryRetriever()
+
+        old = make_chunk("same", [1.0, 0.0])
+        other = make_chunk("other", [0.0, 1.0])
+
+        retriever.add([old, other])
+        retriever.retrieve([1.0, 1.0], top_k=2)
+
+        # The first retrieval consolidates the matrix.
+        assert retriever._matrix is not None
+        assert len(retriever._matrix_blocks) == 1
+
+        latest = make_chunk("same", [0.0, 1.0])
+        retriever.add([latest])
+
+        # The replacement must invalidate the consolidated matrix.
+        assert retriever._matrix is None
+        assert len(retriever) == 2
+
+        results = retriever.retrieve([0.0, 1.0], top_k=2)
+
+        by_id = {chunk.id: chunk for chunk in results}
+        assert by_id["same"] is latest
+        assert by_id["same"].content == latest.content
+        assert by_id["same"].embedding == latest.embedding

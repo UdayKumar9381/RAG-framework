@@ -321,3 +321,71 @@ def test_user_metadata_with_old_empty_marker_is_preserved():
 
     assert len(results) == 1
     assert results[0].metadata == metadata
+
+
+def test_repeated_upsert_returns_latest_content_and_metadata():
+    retriever = ChromaRetriever(
+        collection_name="test_repeated_upsert_latest",
+    )
+
+    old = Chunk(
+        id="same-id",
+        content="Old content",
+        metadata={"version": "old"},
+        embedding=[1.0, 0.0],
+    )
+
+    latest = Chunk(
+        id="same-id",
+        content="Latest content",
+        metadata={"version": "latest"},
+        embedding=[0.0, 1.0],
+    )
+
+    retriever.add([old])
+    retriever.add([latest])
+
+    results = retriever.retrieve([0.0, 1.0], top_k=1)
+
+    assert len(retriever) == 1
+    assert len(results) == 1
+    assert results[0].id == "same-id"
+    assert results[0].content == "Latest content"
+    assert results[0].metadata == {"version": "latest"}
+
+
+def test_duplicate_ids_in_batch_last_occurrence_wins():
+    retriever = ChromaRetriever(
+        collection_name="test_duplicate_ids_last_wins",
+    )
+
+    old = Chunk(
+        id="duplicate",
+        content="Old content",
+        metadata={"version": "old"},
+        embedding=[1.0, 0.0],
+    )
+
+    other = Chunk(
+        id="other",
+        content="Other content",
+        metadata={},
+        embedding=[1.0, 0.0],
+    )
+
+    latest = Chunk(
+        id="duplicate",
+        content="Latest content",
+        metadata={"version": "latest"},
+        embedding=[0.0, 1.0],
+    )
+
+    retriever.add([old, other, latest])
+
+    results = retriever.retrieve([0.0, 1.0], top_k=2)
+    by_id = {chunk.id: chunk for chunk in results}
+
+    assert len(retriever) == 2
+    assert len(by_id) == 2
+    assert by_id["duplicate"].content == "Latest content"
+    assert by_id["duplicate"].metadata == {"version": "latest"}
