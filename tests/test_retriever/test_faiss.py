@@ -65,10 +65,13 @@ def test_retrieve_filter_with_no_matches_returns_empty() -> None:
     chunk = make_chunk("north", [1.0, 0.0])
     retriever.add([chunk])
 
-    assert retriever.retrieve(
-        [1.0, 0.0],
-        filter={"region": "missing"},
-    ) == []
+    assert (
+        retriever.retrieve(
+            [1.0, 0.0],
+            filter={"region": "missing"},
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -86,6 +89,7 @@ def test_retrieve_rejects_non_scalar_filter_values(
             [1.0, 0.0],
             filter={"region": filter_value},  # type: ignore[dict-item]
         )
+
 
 def test_batches_append_without_replacing_existing_chunks() -> None:
     retriever = FAISSRetriever(ef_search=64)

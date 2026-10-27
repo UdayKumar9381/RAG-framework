@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
 from collections.abc import Iterable, Mapping
+from typing import Any
 
 from ragframework.base import (
     Chunk,
@@ -268,11 +268,7 @@ class RAGPipeline:
 
         retrieve_k = self.config.retrieve_k
         if retrieve_k is None:
-            retrieve_k = (
-                final_top_k * 4
-                if self.reranker is not None
-                else final_top_k
-            )
+            retrieve_k = final_top_k * 4 if self.reranker is not None else final_top_k
 
         retrieval_start = time.perf_counter()
 

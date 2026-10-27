@@ -96,14 +96,15 @@ def test_retrieve_filters_by_metadata():
 
 def test_retrieve_filter_with_no_matches_returns_empty():
     retriever = ChromaRetriever(collection_name="test_metadata_filter_no_match")
-    retriever.add(
-        [make_chunk("north", [1.0, 0.0], {"region": "north"})]
-    )
+    retriever.add([make_chunk("north", [1.0, 0.0], {"region": "north"})])
 
-    assert retriever.retrieve(
-        [1.0, 0.0],
-        filter={"region": "missing"},
-    ) == []
+    assert (
+        retriever.retrieve(
+            [1.0, 0.0],
+            filter={"region": "missing"},
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -112,15 +113,14 @@ def test_retrieve_filter_with_no_matches_returns_empty():
 )
 def test_retrieve_rejects_non_scalar_filter_values(filter_value):
     retriever = ChromaRetriever(collection_name="test_metadata_filter_invalid")
-    retriever.add(
-        [make_chunk("north", [1.0, 0.0], {"region": "north"})]
-    )
+    retriever.add([make_chunk("north", [1.0, 0.0], {"region": "north"})])
 
     with pytest.raises(RetrieverError):
         retriever.retrieve(
             [1.0, 0.0],
             filter={"region": filter_value},
         )
+
 
 def test_add_logs_count_and_dimension(caplog):
     retriever = ChromaRetriever(

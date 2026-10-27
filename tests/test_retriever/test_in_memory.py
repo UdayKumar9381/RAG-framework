@@ -257,7 +257,6 @@ def test_add_after_consolidation_preserves_all_results():
     assert len(retriever._matrix_blocks) == 1
     assert retriever._matrix_blocks[0] is retriever._matrix
 
-
     def test_retrieve_filters_by_metadata(self):
         retriever = InMemoryRetriever()
         policy = make_chunk("policy", [1.0, 0.0])
@@ -283,10 +282,13 @@ def test_add_after_consolidation_preserves_all_results():
         chunk.metadata = {"source": "other.pdf"}
         retriever.add([chunk])
 
-        assert retriever.retrieve(
-            [1.0, 0.0],
-            filter={"source": "missing.pdf"},
-        ) == []
+        assert (
+            retriever.retrieve(
+                [1.0, 0.0],
+                filter={"source": "missing.pdf"},
+            )
+            == []
+        )
 
     @pytest.mark.parametrize("filter_value", [["policies.pdf"], {"nested": "value"}, None])
     def test_retrieve_rejects_non_scalar_filter_values(self, filter_value):

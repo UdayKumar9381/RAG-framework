@@ -1,4 +1,3 @@
-
 """ChromaDB-backed retriever."""
 
 from __future__ import annotations
@@ -6,11 +5,10 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping, Sequence
-from typing import Any
 from typing import Any, cast
-from chromadb import Where
 
 import numpy as np
+from chromadb import Where
 
 from ragframework.base import Chunk, Retriever
 from ragframework.exceptions import RetrieverError
@@ -58,9 +56,7 @@ class ChromaRetriever(Retriever):
                 name=collection_name,
             )
         except Exception as exc:
-            raise RetrieverError(
-                f"Could not initialize ChromaDB: {exc}"
-            ) from exc
+            raise RetrieverError(f"Could not initialize ChromaDB: {exc}") from exc
 
     def add(self, chunks: list[Chunk]) -> None:
         """Add embedded chunks to the ChromaDB collection."""
@@ -86,9 +82,7 @@ class ChromaRetriever(Retriever):
                 metadatas=[self._metadata(chunk) for chunk in chunks],
             )
         except Exception as exc:
-            raise RetrieverError(
-                f"Failed to add chunks to ChromaDB: {exc}"
-            ) from exc
+            raise RetrieverError(f"Failed to add chunks to ChromaDB: {exc}") from exc
 
         logger.debug(
             "Added chunks count=%d dimension=%d",
@@ -113,14 +107,11 @@ class ChromaRetriever(Retriever):
 
             if not isinstance(value, (str, int, float, bool)):
                 raise RetrieverError(
-                    f"Filter value for '{key}' must be a scalar "
-                    "(str, int, float, or bool)."
+                    f"Filter value for '{key}' must be a scalar " "(str, int, float, or bool)."
                 )
 
             if isinstance(value, float) and not np.isfinite(value):
-                raise RetrieverError(
-                    f"Filter value for '{key}' must be finite."
-                )
+                raise RetrieverError(f"Filter value for '{key}' must be finite.")
 
     def retrieve(
         self,
@@ -137,22 +128,17 @@ class ChromaRetriever(Retriever):
 
         if top_k <= 0 or len(self) == 0:
             return []
-        
+
         query_embeddings: list[Sequence[float]] = [query_embedding]
 
         where: Where | None = None
 
         if filter:
-            conditions = [
-                {key: {"$eq": value}}
-                for key, value in filter.items()
-            ]
+            conditions = [{key: {"$eq": value}} for key, value in filter.items()]
 
             where = cast(
                 Where,
-                conditions[0]
-                if len(conditions) == 1
-                else {"$and": conditions},
+                conditions[0] if len(conditions) == 1 else {"$and": conditions},
             )
 
         try:
@@ -162,9 +148,7 @@ class ChromaRetriever(Retriever):
                 where=where,
             )
         except Exception as exc:
-            raise RetrieverError(
-                f"Failed to query ChromaDB: {exc}"
-            ) from exc
+            raise RetrieverError(f"Failed to query ChromaDB: {exc}") from exc
 
         ids_result = result.get("ids") or []
         documents_result = result.get("documents") or []
@@ -212,10 +196,7 @@ class ChromaRetriever(Retriever):
 
         # Expose scalar metadata fields directly so Chroma can filter them.
         for key, value in chunk.metadata.items():
-            if (
-                key != cls._METADATA_KEY
-                and isinstance(value, (str, int, float, bool))
-            ):
+            if key != cls._METADATA_KEY and isinstance(value, (str, int, float, bool)):
                 result[key] = value
 
         return result
@@ -249,9 +230,7 @@ class ChromaRetriever(Retriever):
                 name=self._collection_name,
             )
         except Exception as exc:
-            raise RetrieverError(
-                f"Failed to clear ChromaDB collection: {exc}"
-            ) from exc
+            raise RetrieverError(f"Failed to clear ChromaDB collection: {exc}") from exc
 
     def __len__(self) -> int:
         """Return the number of chunks stored in the collection."""

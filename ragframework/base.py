@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -155,7 +155,6 @@ class Retriever(ABC):
     def clear(self) -> None:
         """Remove all indexed chunks."""
 
-    
     @abstractmethod
     def retrieve(
         self,
@@ -180,6 +179,7 @@ class Retriever(ABC):
         Returns:
             Up to ``top_k`` matching chunks, ordered by relevance.
         """
+
 
 class Reranker(ABC):
     """Re-order retrieved chunks using the query text and chunk contents."""

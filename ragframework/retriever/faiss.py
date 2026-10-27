@@ -127,13 +127,10 @@ class FAISSRetriever(Retriever):
                     raise RetrieverError("Filter keys must be strings.")
                 if not isinstance(value, (str, int, float, bool)):
                     raise RetrieverError(
-                        f"Filter value for '{key}' must be a scalar "
-                        "(str, int, float, or bool)."
+                        f"Filter value for '{key}' must be a scalar " "(str, int, float, or bool)."
                     )
                 if isinstance(value, float) and not np.isfinite(value):
-                    raise RetrieverError(
-                        f"Filter value for '{key}' must be finite."
-                    )
+                    raise RetrieverError(f"Filter value for '{key}' must be finite.")
 
         if top_k <= 0 or self._index is None or self._dimension is None:
             return []
@@ -141,16 +138,15 @@ class FAISSRetriever(Retriever):
         query = validate_vector(query_embedding, "Query embedding")
         if query.shape[0] != self._dimension:
             raise RetrieverError(
-                f"Query embedding has dimension {query.shape[0]}; "
-                f"expected {self._dimension}."
+                f"Query embedding has dimension {query.shape[0]}; " f"expected {self._dimension}."
             )
 
         candidate_count = min(top_k * 4, len(self._chunks))
         try:
             _, indices = self._index.search(
-            query.reshape(1, -1),
-            candidate_count,
-        )
+                query.reshape(1, -1),
+                candidate_count,
+            )
         except Exception as exc:
             raise RetrieverError(f"FAISS failed to search: {exc}") from exc
 
@@ -161,8 +157,7 @@ class FAISSRetriever(Retriever):
 
             chunk = self._chunks[int(index)]
             if filter is not None and not all(
-                chunk.metadata.get(key) == expected
-                for key, expected in filter.items()
+                chunk.metadata.get(key) == expected for key, expected in filter.items()
             ):
                 continue
 
