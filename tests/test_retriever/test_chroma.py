@@ -1,5 +1,6 @@
 """Tests for ChromaRetriever."""
 
+import json
 import logging
 from pathlib import Path
 
@@ -390,3 +391,102 @@ def test_user_metadata_with_old_empty_marker_is_preserved():
 
     assert len(results) == 1
     assert results[0].metadata == metadata
+
+
+def test_metadata_preserves_scalar_values():
+    chunk = Chunk(
+        id="metadata-test",
+        content="Test content",
+        embedding=[1.0, 0.0],
+        metadata={"category": "science", "count": 3, "active": True},
+    )
+
+    stored = ChromaRetriever._metadata(chunk)
+
+    assert stored["category"] == "science"
+    assert stored["count"] == 3
+    assert stored["active"] is True
+    assert json.loads(stored["_ragframework_metadata"]) == chunk.metadata
+
+
+def test_restore_metadata_without_serialized_value():
+    metadata = {"category": "science", "count": 3}
+
+    assert ChromaRetriever._restore_metadata(metadata) == metadata
+
+
+def test_restore_metadata_with_invalid_json():
+    metadata = {"_ragframework_metadata": "{invalid-json", "category": "science"}
+
+    assert ChromaRetriever._restore_metadata(metadata) == metadata
+
+
+def test_restore_metadata_with_non_dictionary_json():
+    metadata = {"_ragframework_metadata": '["science", "history"]'}
+
+    assert ChromaRetriever._restore_metadata(metadata) == metadata
+
+
+def test_add_chunk_without_embedding_raises_error():
+    from ragframework.base import Chunk
+    from ragframework.exceptions import RetrieverError
+    from ragframework.retriever.chroma import ChromaRetriever
+
+    retriever = ChromaRetriever()
+    chunk = Chunk(
+        id="missing-embedding",
+        content="Test content",
+        embedding=None,
+        metadata={},
+    )
+
+    with pytest.raises(RetrieverError, match="has no embedding"):
+        retriever.add([chunk])
+
+
+def test_retrieve_rejects_non_finite_filter():
+    from ragframework.exceptions import RetrieverError
+    from ragframework.retriever.chroma import ChromaRetriever
+
+    retriever = ChromaRetriever()
+
+    with pytest.raises(RetrieverError, match="must be finite"):
+        retriever.retrieve([1.0, 0.0], filter={"score": float("nan")})
+
+
+def test_retrieve_wraps_query_exception():
+    retriever = ChromaRetriever(collection_name="test_query_error")
+    retriever.add([make_chunk("query-error", [1.0, 0.0])])
+
+    def raise_query_error(**kwargs):
+        raise RuntimeError("simulated query failure")
+
+    retriever._collection.query = raise_query_error
+
+    with pytest.raises(RetrieverError, match="Failed to query ChromaDB"):
+        retriever.retrieve([1.0, 0.0])
+
+
+def test_clear_wraps_delete_exception():
+    retriever = ChromaRetriever(collection_name="test_clear_error")
+
+    def raise_delete_error(**kwargs):
+        raise RuntimeError("simulated delete failure")
+
+    retriever._client.delete_collection = raise_delete_error
+
+    with pytest.raises(RetrieverError, match="Failed to clear ChromaDB collection"):
+        retriever.clear()
+
+
+def test_retrieve_handles_empty_result_groups():
+    retriever = ChromaRetriever(collection_name="test_empty_result_groups")
+    retriever.add([make_chunk("empty-groups", [1.0, 0.0])])
+
+    retriever._collection.query = lambda **kwargs: {
+        "ids": [],
+        "documents": [],
+        "metadatas": [],
+    }
+
+    assert retriever.retrieve([1.0, 0.0]) == []

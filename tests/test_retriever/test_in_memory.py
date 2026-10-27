@@ -1,6 +1,7 @@
 """Tests for InMemoryRetriever."""
 
 import logging
+import math
 
 import pytest
 
@@ -35,6 +36,33 @@ class TestInMemoryRetriever:
             retriever.add(chunks)
 
         assert "Added chunks count=2 dimension=16" in caplog.text
+
+    def test_retrieve_rejects_non_mapping_filter(self):
+        retriever = InMemoryRetriever()
+
+        with pytest.raises(RetrieverError, match="filter must be a mapping"):
+            retriever.retrieve([1.0, 0.0], filter=["invalid"])
+
+    def test_retrieve_rejects_non_string_filter_key(self):
+        retriever = InMemoryRetriever()
+
+        with pytest.raises(RetrieverError, match="Filter keys must be strings"):
+            retriever.retrieve([1.0, 0.0], filter={1: "value"})
+
+    @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+    def test_retrieve_rejects_non_finite_filter_values(self, value):
+        retriever = InMemoryRetriever()
+
+        with pytest.raises(RetrieverError, match="must be finite"):
+            retriever.retrieve([1.0, 0.0], filter={"score": value})
+
+    def test_retrieve_with_empty_filter_returns_results(self):
+        retriever = InMemoryRetriever()
+        retriever.add([make_chunk("a", [1.0, 0.0])])
+
+        results = retriever.retrieve([1.0, 0.0], filter={})
+
+        assert [chunk.id for chunk in results] == ["a"]
 
     def test_clear_empties_index_and_allows_new_dimension(self):
         r = InMemoryRetriever()
