@@ -63,6 +63,65 @@ def test_add_and_retrieve():
     assert results[0].metadata["source"] == "test.txt"
 
 
+def test_retrieve_filters_by_metadata():
+    retriever = ChromaRetriever(collection_name="test_metadata_filter")
+    retriever.add(
+        [
+            make_chunk(
+                "north",
+                [1.0, 0.0],
+                {"region": "north", "active": True},
+            ),
+            make_chunk(
+                "south",
+                [0.0, 1.0],
+                {"region": "south", "active": True},
+            ),
+            make_chunk(
+                "inactive",
+                [0.8, 0.2],
+                {"region": "north", "active": False},
+            ),
+        ]
+    )
+
+    results = retriever.retrieve(
+        [1.0, 0.0],
+        top_k=3,
+        filter={"region": "north", "active": True},
+    )
+
+    assert [chunk.id for chunk in results] == ["north"]
+
+
+def test_retrieve_filter_with_no_matches_returns_empty():
+    retriever = ChromaRetriever(collection_name="test_metadata_filter_no_match")
+    retriever.add(
+        [make_chunk("north", [1.0, 0.0], {"region": "north"})]
+    )
+
+    assert retriever.retrieve(
+        [1.0, 0.0],
+        filter={"region": "missing"},
+    ) == []
+
+
+@pytest.mark.parametrize(
+    "filter_value",
+    [["north"], {"nested": "value"}, None],
+)
+def test_retrieve_rejects_non_scalar_filter_values(filter_value):
+    retriever = ChromaRetriever(collection_name="test_metadata_filter_invalid")
+    retriever.add(
+        [make_chunk("north", [1.0, 0.0], {"region": "north"})]
+    )
+
+    with pytest.raises(RetrieverError):
+        retriever.retrieve(
+            [1.0, 0.0],
+            filter={"region": filter_value},
+        )
+
 def test_add_logs_count_and_dimension(caplog):
     retriever = ChromaRetriever(
         collection_name="test_add_logging",

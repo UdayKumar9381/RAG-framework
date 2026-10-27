@@ -256,3 +256,48 @@ def test_add_after_consolidation_preserves_all_results():
     assert [chunk.id for chunk in results] == ["c", "b", "a"]
     assert len(retriever._matrix_blocks) == 1
     assert retriever._matrix_blocks[0] is retriever._matrix
+
+
+    def test_retrieve_filters_by_metadata(self):
+        retriever = InMemoryRetriever()
+        policy = make_chunk("policy", [1.0, 0.0])
+        policy.metadata = {"source": "policies.pdf", "page_number": 3}
+        other = make_chunk("other", [0.9, 0.1])
+        other.metadata = {"source": "other.pdf", "page_number": 3}
+        wrong_page = make_chunk("wrong-page", [0.8, 0.2])
+        wrong_page.metadata = {"source": "policies.pdf", "page_number": 4}
+
+        retriever.add([policy, other, wrong_page])
+
+        results = retriever.retrieve(
+            [1.0, 0.0],
+            top_k=5,
+            filter={"source": "policies.pdf", "page_number": 3},
+        )
+
+        assert results == [policy]
+
+    def test_retrieve_filter_with_no_matches_returns_empty(self):
+        retriever = InMemoryRetriever()
+        chunk = make_chunk("one", [1.0, 0.0])
+        chunk.metadata = {"source": "other.pdf"}
+        retriever.add([chunk])
+
+        assert retriever.retrieve(
+            [1.0, 0.0],
+            filter={"source": "missing.pdf"},
+        ) == []
+
+    @pytest.mark.parametrize("filter_value", [["policies.pdf"], {"nested": "value"}, None])
+    def test_retrieve_rejects_non_scalar_filter_values(self, filter_value):
+        if filter_value is None:
+            return
+
+        retriever = InMemoryRetriever()
+        retriever.add([make_chunk("one", [1.0, 0.0])])
+
+        with pytest.raises(RetrieverError, match="must be a scalar"):
+            retriever.retrieve(
+                [1.0, 0.0],
+                filter={"source": filter_value},
+            )

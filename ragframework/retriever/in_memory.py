@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -67,38 +68,80 @@ class InMemoryRetriever(Retriever):
             matrix.shape[1],
         )
 
-    def retrieve(self, query_embedding: list[float], top_k: int = 5) -> list[Chunk]:
-        """Rank chunks by cosine similarity.
+    @staticmethod
+    def _validate_filter(filter: Mapping[str, Any] | None) -> None:
+        """Validate that filter values are supported scalar types."""
+        if filter is None:
+            return
 
-        Non-positive ``top_k`` values return an empty list.
-        An empty index also returns an empty list. Invalid query vectors
-        or dimensions raise ``RetrieverError``. Non-integer / bool
-        ``top_k`` raises ``RetrieverError``.
-        """
+        if not isinstance(filter, Mapping):
+            raise RetrieverError("filter must be a mapping or None.")
+
+        for key, value in filter.items():
+            if not isinstance(key, str):
+                raise RetrieverError("Filter keys must be strings.")
+
+            if not isinstance(value, (str, int, float, bool)):
+                raise RetrieverError(
+                    f"Filter value for '{key}' must be a scalar "
+                    "(str, int, float, or bool)."
+                )
+
+            if isinstance(value, float) and not np.isfinite(value):
+                raise RetrieverError(
+                    f"Filter value for '{key}' must be finite."
+                )
+
+    def retrieve(
+        self,
+        query_embedding: list[float],
+        top_k: int = 5,
+        *,
+        filter: Mapping[str, Any] | None = None,
+    ) -> list[Chunk]:
+        """Rank chunks by cosine similarity, optionally filtering metadata."""
         if not isinstance(top_k, int) or isinstance(top_k, bool):
             raise RetrieverError("top_k must be an integer.")
+
+        self._validate_filter(filter)
+
         if top_k <= 0 or not self._chunks:
             return []
+
         q = validate_vector(query_embedding, "Query embedding")
         if q.shape[0] != self._dimension:
             raise RetrieverError(
-                f"Query embedding has dimension {q.shape[0]}; expected {self._dimension}."
+                f"Query embedding has dimension {q.shape[0]}; "
+                f"expected {self._dimension}."
             )
+
         if self._matrix is None:
             if len(self._matrix_blocks) == 1:
-                # Reuse the existing array; do not create another copy.
                 self._matrix = self._matrix_blocks[0]
             else:
-                # Consolidate all blocks into one cached matrix and replace the
-                # old block references so the original arrays can be released.
                 self._matrix = np.concatenate(self._matrix_blocks)
                 self._matrix_blocks = [self._matrix]
 
         scores: np.ndarray[Any, Any] = self._matrix @ q
-        k = min(top_k, len(self._chunks))
-        top_indices = np.argpartition(scores, -k)[-k:]
-        top_indices = top_indices[np.argsort(scores[top_indices])[::-1]]
-        return [self._chunks[i] for i in top_indices]
+
+        # Sort all candidates by similarity before applying metadata filters.
+        ordered_indices = np.argsort(scores)[::-1]
+
+        results: list[Chunk] = []
+        for index in ordered_indices:
+            chunk = self._chunks[int(index)]
+
+            if filter is not None and not all(
+                chunk.metadata.get(key) == expected
+                for key, expected in filter.items()
+            ):
+                continue
+
+            results.append(chunk)
+            if len(results) == top_k:
+                break
+
+        return results
 
     def clear(self) -> None:
         """Remove all chunks and reset the accepted embedding dimension."""

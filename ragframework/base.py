@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from collections.abc import Mapping
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -154,20 +155,31 @@ class Retriever(ABC):
     def clear(self) -> None:
         """Remove all indexed chunks."""
 
+    
     @abstractmethod
-    def retrieve(self, query_embedding: list[float], top_k: int = 5) -> list[Chunk]:
-        """Return the *top_k* most relevant chunks for *query_embedding*.
+    def retrieve(
+        self,
+        query_embedding: list[float],
+        top_k: int = 5,
+        *,
+        filter: Mapping[str, Any] | None = None,
+    ) -> list[Chunk]:
+        """Return the most relevant chunks matching an optional metadata filter.
+
+        Filter semantics use exact-match AND across all supplied keys.
+        Non-scalar filter values are invalid. A ``None`` filter disables
+        metadata filtering.
 
         Args:
             query_embedding: Query vector produced by an :class:`Embedder`.
             top_k: Maximum number of chunks to return. Non-positive values
                 return an empty list.
+            filter: Optional metadata conditions. Every key-value pair must
+                match the chunk metadata exactly.
 
         Returns:
-            Up to *top_k* chunks, ordered by relevance (most relevant first).
-            An empty list when *top_k* is non-positive.
+            Up to ``top_k`` matching chunks, ordered by relevance.
         """
-
 
 class Reranker(ABC):
     """Re-order retrieved chunks using the query text and chunk contents."""
