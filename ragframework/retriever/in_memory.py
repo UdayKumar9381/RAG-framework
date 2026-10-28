@@ -1,4 +1,3 @@
-
 """In-memory retriever using cosine similarity."""
 
 from __future__ import annotations
@@ -67,9 +66,7 @@ class InMemoryRetriever(Retriever):
         for chunk, vector in validated:
             latest[chunk.id] = (chunk, vector)
 
-        has_existing_id = any(
-            chunk_id in self._id_to_index for chunk_id in latest
-        )
+        has_existing_id = any(chunk_id in self._id_to_index for chunk_id in latest)
 
         # Keep a consolidated matrix as a block when invalidating its cache.
         if self._matrix is not None:
@@ -96,9 +93,7 @@ class InMemoryRetriever(Retriever):
                 # A replacement must update the existing row, not append one.
                 if self._matrix is None:
                     if self._matrix_blocks:
-                        self._matrix = np.concatenate(
-                            self._matrix_blocks, axis=0
-                        )
+                        self._matrix = np.concatenate(self._matrix_blocks, axis=0)
                     else:
                         self._matrix = np.empty(
                             (0, expected_dimension or 0),
@@ -146,14 +141,11 @@ class InMemoryRetriever(Retriever):
 
             if not isinstance(value, (str, int, float, bool)):
                 raise RetrieverError(
-                    f"Filter value for '{key}' must be a scalar "
-                    "(str, int, float, or bool)."
+                    f"Filter value for '{key}' must be a scalar (str, int, float, or bool)."
                 )
 
             if isinstance(value, float) and not np.isfinite(value):
-                raise RetrieverError(
-                    f"Filter value for '{key}' must be finite."
-                )
+                raise RetrieverError(f"Filter value for '{key}' must be finite.")
 
     def retrieve(
         self,
@@ -175,8 +167,7 @@ class InMemoryRetriever(Retriever):
 
         if query.shape[0] != self._dimension:
             raise RetrieverError(
-                f"Query embedding has dimension {query.shape[0]}; "
-                f"expected {self._dimension}."
+                f"Query embedding has dimension {query.shape[0]}; expected {self._dimension}."
             )
 
         if self._matrix is None:
@@ -188,9 +179,7 @@ class InMemoryRetriever(Retriever):
             elif len(self._matrix_blocks) == 1:
                 self._matrix = self._matrix_blocks[0]
             else:
-                self._matrix = np.concatenate(
-                    self._matrix_blocks, axis=0
-                )
+                self._matrix = np.concatenate(self._matrix_blocks, axis=0)
 
             # Keep one canonical block after consolidation.
             self._matrix_blocks = [self._matrix]
@@ -204,8 +193,7 @@ class InMemoryRetriever(Retriever):
             chunk = self._chunks[int(index)]
 
             if filter is not None and not all(
-                chunk.metadata.get(key) == expected
-                for key, expected in filter.items()
+                chunk.metadata.get(key) == expected for key, expected in filter.items()
             ):
                 continue
 
